@@ -5,6 +5,7 @@ import time
 from time import gmtime, strftime
 import json
 import os
+import glob
 
 base_cdc_url = 'https://wwwn.cdc.gov'
 
@@ -72,6 +73,39 @@ def download_data(data_type, link_list, base_url):
             print(f'Downloaded {item_name} at {time_elapsed}s')
     
 
+def create_xpt_dict(data_type):
+    original_file_names = {}
+    group_file_names = []
+    for file in glob.glob(f'{data_type}/*'):
+        xpt_file = file.split('/')[1]
+        if len(xpt_file.split('_'))== 1:
+            original_file_names[xpt_file.split('.')[0]] = [xpt_file]
+    for file in glob.glob(f'{data_type}/*'):
+        xpt_file = file.split('/')[1]
+        if len(xpt_file.split('_'))> 1:
+            try:
+                xpt_name = xpt_file.split('_')[0]
+                original_file_names[f'{xpt_name}'].append(xpt_file)
+            except KeyError as e:
+                xpt_name = xpt_file.split('_')[0]
+                original_file_names[f'{xpt_name}'] = [xpt_file]               
+    return original_file_names 
+
+# If it is found some files that download are 0 bytes, they need to be re-downloaded this is an error function
+def grab_empty_files(data_type, base_url):
+    empty_list = []
+    cwd = os.getcwd()
+    for file in glob.glob(f'{cwd}/{data_type}/*'):
+        if os.stat(file).st_size == 0:
+            empty_list.append(file)
+            os.remove(file)
+    if len(empty_list) == 0:
+        print("There are no empty files in this folder")
+    else:
+        print(f"Now re-downloading {len(empty_list)} files")
+        download_data(data_type, empty_list, base_url)
+    
+
 
 # First to get the links of all of the database
 demographic_xpt_links = get_multi_year('demographics', base_cdc_url)
@@ -89,3 +123,19 @@ xpt_link_dictionary = {'demographics':demographic_links, 'dietary':dietary_links
 # Create JSON file of current link dict for future use
 with open('xpt_link_dict.json', 'w') as f:
     json.dump(link_dictionary, f)
+    
+# Download individual groupings of xpt files
+download_data('demographics', link_dictionary['demographics'], base_cdc_url)
+download_data('dietary', link_dictionary['dietary'], base_cdc_url)
+download_data('examination', link_dictionary['examination'], base_cdc_url)
+download_data('laboratory', link_dictionary['laboratory'], base_cdc_url)
+download_data('questionnaire', link_dictionary['questionnaire'], base_cdc_url)
+    
+
+# Create the xpt_file_dict json for individual table creation and anticipation of merged tabes
+xpt_file_dict = {}
+for keys in link_dictionary:
+    xpt_file_dict[keys] = create_xpt_dict(keys)
+    
+with open('xpt_file_dict.json', 'w') as f:
+    json.dump(xpt_file_dict, f)
